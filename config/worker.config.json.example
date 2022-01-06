@@ -1,0 +1,17 @@
+{
+  "db_url":"mongodb://localhost:27017",
+  "ln_nodes": [
+    {
+      "cert": "path to lnd cert",
+      "macaroon": " path to lnd admin macaroon",
+      "socket": "127.0.0.1:10004",
+      "type": "LND",
+      "node_name": "lnd"
+    }
+  ],
+  "constants":{
+    "order_expiry" : 600000,
+    "max_attempt_channel_open" : 50,
+    "product_id": "temporary product id"
+  }
+}
