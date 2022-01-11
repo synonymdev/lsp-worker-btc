@@ -67,7 +67,6 @@ class Mempool extends Worker {
       (mempool, next) => {
         this._getCurrentHeight((err, height) => {
           if (err) return next(err)
-          console.log(height)
           next(null, { mempool, height })
         })
       },

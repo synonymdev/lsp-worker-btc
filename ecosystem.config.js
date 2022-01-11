@@ -11,7 +11,25 @@ module.exports = {
   apps: [
     {
       name: 'btc:worker',
-      script: './start.js',
+      script: './start.bitcoin.js',
+      env: {
+        DEBUG: DEBUG_FLAG
+      },
+      env_production: {},
+      ...settings
+    },
+    {
+      name: 'btc:worker:mempool',
+      script: './start.mempool.js',
+      env: {
+        DEBUG: DEBUG_FLAG
+      },
+      env_production: {},
+      ...settings
+    },
+    {
+      name: 'btc:worker:blocks',
+      script: './start.blocks.js',
       env: {
         DEBUG: DEBUG_FLAG
       },
