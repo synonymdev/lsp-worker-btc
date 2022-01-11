@@ -26,6 +26,13 @@ class Mempool extends Worker {
     this.current_height = null
   }
 
+  getCurrrentFeeThreshold (args,cb) {
+    return cb(null, {
+      min_fee: this.min_fee,
+      min_fee_expiry: this.min_fee_expiry
+    })
+  }
+
   updateHeight (cb) {
     this._getCurrentHeight((err, height) => {
       if (err) {
