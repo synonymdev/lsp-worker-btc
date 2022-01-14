@@ -1,6 +1,7 @@
 'use strict'
 const async = require('async')
 const { toSatoshi } = require('./sats-convert')
+const { getDestinationAddr, isCoinbase } = require('./parse-tx')
 const BitcoinWorker = require('./BitcoinWorker')
 const { StatusFile } = require('blocktank-worker')
 const blockConfig = require('../config/blocks.worker.config.json')
@@ -72,6 +73,8 @@ class BlockProcessor extends BitcoinWorker {
     const tx = await this.btc.getRawTransaction({ id })
     if (!tx) return null
 
+    if (isCoinbase(tx)) return null
+
     if (!height) {
       if (!tx.blockhash) {
         return []
@@ -83,12 +86,12 @@ class BlockProcessor extends BitcoinWorker {
     }
     return tx.vout
       .map((vout) => {
-        // filter coinbase transactions
-        if (!vout.scriptPubKey.address) return null
+        const toAddr = getDestinationAddr(vout)
+        if (!toAddr) return null
         return {
           height,
           hash: id,
-          to: vout.scriptPubKey.address,
+          to: toAddr,
           amount_base: toSatoshi(vout.value),
           fee_base: toSatoshi(vout.fee || 0)
         }
@@ -96,19 +99,17 @@ class BlockProcessor extends BitcoinWorker {
   }
 
   async getHeightTransactions ({ height }, cb) {
+    console.log('Getting transactions for block: ', height)
     const blockTx = await this.getBlockData({ height })
     return new Promise((resolve, reject) => {
       async.mapSeries(blockTx.tx, async (id) => {
         return this.parseTransaction({ height, id })
       }, (err, tx) => {
-        if (err) return reject(err)
-        resolve(tx.flat().filter(Boolean))
+        if (err) return cb(err)
+        console.log('Done block', height)
+        cb(null, tx.flat().filter(Boolean))
       })
     })
-  }
-
-  getTransaction ({ txid }) {
-    return this.btc.getTransaction(txid)
   }
 
   async getBlockData ({ height }, cb) {

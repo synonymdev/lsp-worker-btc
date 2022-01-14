@@ -7,6 +7,7 @@ const BN = require('bignumber.js')
 const { default: axios } = require('axios')
 const Worker = require('./BitcoinWorker')
 const { toSatoshi } = require('./sats-convert')
+const { getDestinationAddr } = require('./parse-tx')
 const mempoolConfig = require('../config/mempool.worker.config.json')
 
 async function mempoolProvider () {
@@ -22,7 +23,7 @@ async function mempoolProvider () {
 class Mempool extends Worker {
   constructor (config) {
     super(config)
-    this.statusFile = path.join(__dirname, '../../status/mempool.json')
+    this.statusFile = path.join(__dirname, '../status/mempool.json')
     this.current_height = null
   }
 
@@ -108,7 +109,7 @@ class Mempool extends Worker {
       async (txs) => {
         return txs.map(({ details, mempool }) => {
           return _.get(details, 'vout', []).map((vout) => {
-            const toAddr = _.get(vout, 'scriptPubKey.address') || _.get(vout, 'scriptPubKey.addresses', ['']).pop()
+            const toAddr = getDestinationAddr(vout)
             if (!toAddr) return null
             return {
               height: mempool.height,

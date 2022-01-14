@@ -29,6 +29,12 @@ class BitcoinWorker extends Worker {
   }
 
   _handler (action, args, cb) {
+    if (!Array.isArray(args)) {
+      args = [args]
+    }
+    if (!args.push) {
+      throw new Error('Invalid params passed:')
+    }
     args.push(cb)
     this.btc[action].apply(this.btc, args)
   }

@@ -3,6 +3,15 @@ const axios = require('axios')
 const { get } = require('lodash')
 const BitcoinDB = require('./BitcoinDb')
 
+const promcb = (resolve, reject, cb) => {
+  return (err, data) => {
+    if (err) {
+      return cb ? cb(err, data) : reject(err)
+    }
+    cb ? cb(err, data) : resolve(data)
+  }
+}
+
 module.exports = class Bitcoin {
   constructor (config = {}) {
     this.config = config.bitcoin_node
@@ -29,8 +38,15 @@ module.exports = class Bitcoin {
       console.log(`Method called: ${method} - ${params}`)
       console.log(get(err, 'response.data', err))
       // console.log(err.response.data)
+      if (cb) {
+        return cb((err))
+      }
     }
-    return get(res, 'data.result')
+    const data = get(res, 'data.result')
+    if (cb) {
+      return cb(null, data)
+    }
+    return data
   }
 
   async getHeight (args, cb) {
@@ -75,19 +91,14 @@ module.exports = class Bitcoin {
     })
   }
 
-  async getTransaction (args) {
-    let tx
-    try {
-      tx = await this._callApi('gettransaction', [args])
-    } catch (err) {
-      console.log('Failed to get tx', err)
-      return null
-    }
-    return tx
+  getTransaction (args, cb) {
+    return new Promise((resolve, reject) => {
+      this._callApi('gettransaction', [args], promcb(resolve, reject, cb))
+    })
   }
 
   async getBlockHash (args, cb) {
-    return this._callApi('getblockhash', [args])
+    return this._callApi('getblockhash', [+args])
   }
 
   async getBlock (args, cb) {
