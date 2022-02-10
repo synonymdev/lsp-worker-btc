@@ -146,3 +146,4 @@ module.exports = class Bitcoin {
     cb(null, { spendable_btc: bal })
   }
 }
+  
