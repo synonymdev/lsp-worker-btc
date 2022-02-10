@@ -1,0 +1,16 @@
+{
+  "new_block":[
+    "svc:btc_zero_conf_orders",
+    "svc:btc_address_watch"
+  ],
+  "new_transactions":[
+    "svc:btc_zero_conf_orders"
+  ],
+  "max_amount": 1000000000000,
+  "max_orders": 10,
+  "max_total_amount": 500000000,
+  "quote_expiry": 1000,
+  "mempool_timer": 5000
+}
+
+

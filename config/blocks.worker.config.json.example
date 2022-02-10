@@ -1,0 +1,8 @@
+{
+  "new_block_listeners":[
+    "svc:btc_zero_conf_orders",
+    "svc:btc_address_watch"
+  ]
+}
+
+

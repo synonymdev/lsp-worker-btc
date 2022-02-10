@@ -1,0 +1,26 @@
+{
+  "name": "blocktank-worker-btc",
+  "version": "1.0.0",
+  "description": "",
+  "main": "start.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/synonym/blocktank-worker-btc.git"
+  },
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/synonym/blocktank-worker-btc/issues"
+  },
+  "homepage": "https://github.com/synonym/blocktank-worker-btc#readme",
+  "dependencies": {
+    "async": "^3.2.3",
+    "axios": "^0.24.0",
+    "bignumber.js": "^9.0.2",
+    "debug": "^4.3.3",
+    "lodash": "^4.17.21"
+  }
+}
