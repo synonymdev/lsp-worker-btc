@@ -4,7 +4,8 @@ const DEBUG_FLAG = 'LH:*'
 
 const settings = {
   ignore_watch: 'status',
-  watch: ['./src', './*js']
+  watch: ['./src', './*js'],
+  namespace: 'workers-bitcoin'
 }
 
 module.exports = {
