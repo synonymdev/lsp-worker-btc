@@ -27,7 +27,7 @@ class Mempool extends Worker {
     this.current_height = null
   }
 
-  getCurrrentFeeThreshold (args,cb) {
+  getCurrrentFeeThreshold (args, cb) {
     return cb(null, {
       min_fee: this.min_fee,
       min_fee_expiry: this.min_fee_expiry
@@ -78,9 +78,11 @@ class Mempool extends Worker {
           next(null, { mempool, height })
         })
       },
-      ({ mempool, height }, next) => {
-        mempool = Object.keys(mempool).map((id) => {
-          const tx = mempool[id]
+      async ({ mempool, height }, next) => {
+        const mempoolTx = []
+
+        for (const txid in mempool) {
+          const tx = mempool[txid]
           const satVbyte = new BN(toSatoshi(tx.fee)).dividedToIntegerBy(tx.vsize)
           if (!satVbyte.isInteger()) {
             return next(new Error('Failed to calculate SatVbyte'))
@@ -97,14 +99,13 @@ class Mempool extends Worker {
             // Minimum Fee must be spent
             satVbyte.gte(this.min_fee)
           ].includes(false)
-          tx._txid = id
+          tx._txid = txid
           tx.zero_conf = !zeroConfTx
-          return tx
-        })
-        async.mapLimit(mempool, 2, async (tx) => {
+          if (!tx.zero_conf) continue
           const details = await this.btc.getRawTransaction({ id: tx._txid })
-          return { mempool: tx, details }
-        }, next)
+          mempoolTx.push({ mempool: tx, details })
+        }
+        return mempoolTx
       },
       async (txs) => {
         return txs.map(({ details, mempool }) => {

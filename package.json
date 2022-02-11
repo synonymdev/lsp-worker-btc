@@ -20,6 +20,7 @@
     "async": "^3.2.3",
     "axios": "^0.24.0",
     "bignumber.js": "^9.0.2",
+    "blocktank-worker": "git+https://github.com/synonymdev/blocktank-worker.git",
     "debug": "^4.3.3",
     "lodash": "^4.17.21"
   }
