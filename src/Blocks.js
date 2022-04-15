@@ -73,8 +73,6 @@ class BlockProcessor extends BitcoinWorker {
     const tx = await this.btc.getRawTransaction({ id })
     if (!tx) return null
 
-    if (isCoinbase(tx)) return null
-
     if (!height) {
       if (!tx.blockhash) {
         return []
@@ -88,14 +86,42 @@ class BlockProcessor extends BitcoinWorker {
       .map((vout) => {
         const toAddr = getDestinationAddr(vout)
         if (!toAddr) return null
-        return {
+        return [tx, {
           height,
           hash: id,
           to: toAddr,
           amount_base: toSatoshi(vout.value),
           fee_base: toSatoshi(vout.fee || 0)
-        }
+        }]
       })
+  }
+
+  async processSender (tx) {
+    return new Promise((resolve, reject) => {
+      async.mapSeries(tx, async (data, next) => {
+        if (!data) return null
+        const [rawTx, parsedTx] = data
+        if (!rawTx.vin) {
+          parsedTx.from = null
+          return parsedTx
+        }
+        const from = []
+        for (const vin of rawTx.vin) {
+          if (vin.coinbase) continue
+          const tx = await this.parseTransaction({ height: null, id: vin.txid })
+          if (!tx) continue
+          tx.forEach((d) => {
+            if (!d) return
+            from.push(d[1].to)
+          })
+        }
+        parsedTx.from = from
+        return parsedTx
+      }, (err, data) => {
+        if (err) return reject(err)
+        resolve(data)
+      })
+    })
   }
 
   async getHeightTransactions ({ height }, cb) {
@@ -103,11 +129,13 @@ class BlockProcessor extends BitcoinWorker {
     const blockTx = await this.getBlockData({ height })
     return new Promise((resolve, reject) => {
       async.mapSeries(blockTx.tx, async (id) => {
-        return this.parseTransaction({ height, id })
-      }, (err, tx) => {
+        const tx = await this.parseTransaction({ height, id })
+        return this.processSender(tx)
+      }, (err, data) => {
         if (err) return cb(err)
         console.log('Done block', height)
-        cb(null, tx.flat().filter(Boolean))
+        const tx = data.flat().filter(Boolean)
+        cb(null, tx)
       })
     })
   }
