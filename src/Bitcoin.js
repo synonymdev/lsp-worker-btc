@@ -2,6 +2,9 @@
 const axios = require('axios')
 const { get } = require('lodash')
 const BitcoinDB = require('./BitcoinDb')
+const { toSatoshi } = require('./sats-convert')
+const { getDestinationAddr } = require('./parse-tx')
+const async = require('async')
 
 const promcb = (resolve, reject, cb) => {
   return (err, data) => {
@@ -60,6 +63,22 @@ module.exports = class Bitcoin {
 
   async getMempool (options) {
     return this._callApi('getrawmempool', options || {})
+  }
+
+  // Transactions older than 5 mins are ignored
+  async getOptimisedMempool (options) {
+    const mempool = await this.getMempool(options)
+
+    const data = {}
+    const MIN_TIME = 300
+    const now = Math.floor(Date.now() / 1000)
+    for (const txid in mempool) {
+      const tx = mempool[txid]
+      const diff = now - tx.time
+      if (diff > MIN_TIME) continue
+      data[txid] = tx
+    }
+    return data
   }
 
   async estimateSmartFee (options) {
@@ -145,5 +164,77 @@ module.exports = class Bitcoin {
     }
     cb(null, { spendable_btc: bal })
   }
+
+  async getBlockHeightOfTx ({ id }) {
+    const block = await this.getBlock(id)
+    return block.height ? block.height : null
+  }
+
+  async parseTransaction ({ height, id }) {
+    const tx = await this.getRawTransaction({ id })
+    if (!tx) return null
+
+    if (!height || height !== 'SKIP') {
+      if (!tx.blockhash) {
+        return []
+      }
+      height = await this.getBlockHeightOfTx({ id: tx.blockhash })
+      if (!height) {
+        return []
+      }
+    } else {
+      height = null
+    }
+
+    return tx.vout
+      .map((vout) => {
+        const toAddr = getDestinationAddr(vout)
+        if (!toAddr) return null
+        return [tx, {
+          height,
+          hash: id,
+          to: toAddr,
+          amount_base: toSatoshi(vout.value)
+        }]
+      })
+  }
+
+  async processSender (tx, mempoolTx) {
+    return new Promise((resolve, reject) => {
+      async.mapSeries(tx, async (data) => {
+        if (!data) return null
+        const [rawTx, parsedTx] = data
+        if (!rawTx.vin) {
+          parsedTx.from = null
+          return parsedTx
+        }
+        const from = []
+        for (const vin of rawTx.vin) {
+          if (vin.coinbase) continue
+          const tx = await this.parseTransaction({ height: mempoolTx ? 'SKIP' : null, id: vin.txid })
+          if (!tx) continue
+          tx.forEach((d) => {
+            if (!d || from.includes(d[1].to)) return
+            from.push(d[1].to)
+          })
+        }
+        parsedTx.from = from
+        return parsedTx
+      }, (err, data) => {
+        if (err) return reject(err)
+        resolve(data)
+      })
+    })
+  }
+
+  async mineRegtestCoin (args, cb) {
+    this.getNewAddress({ tag: 'regtest_min' }, async (err, {address}) => {
+      if (err) return cb(err)
+      const block = await this._callApi('generatetoaddress', {
+        address,
+        nblocks: args.blocks
+      })
+      cb(null, block)
+    })
+  }
 }
-  

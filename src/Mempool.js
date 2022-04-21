@@ -7,7 +7,6 @@ const BN = require('bignumber.js')
 const { default: axios } = require('axios')
 const Worker = require('./BitcoinWorker')
 const { toSatoshi } = require('./sats-convert')
-const { getDestinationAddr } = require('./parse-tx')
 const mempoolConfig = require('../config/mempool.worker.config.json')
 
 async function mempoolProvider () {
@@ -20,11 +19,37 @@ async function mempoolProvider () {
   }
 }
 
+class MempoolCache {
+  constructor () {
+    this.store = new Map()
+
+    const CACHE_CLEAR = 300000 // five mins
+
+    this.timer = setInterval(() => {
+      this.store.forEach((v, k) => {
+        const diff = Date.now() - v
+        if (diff > CACHE_CLEAR) {
+          this.store.delete(k)
+        }
+      })
+    })
+  }
+
+  add (txid) {
+    this.store.set(txid, Date.now())
+  }
+
+  exists (txid) {
+    return this.store.has(txid)
+  }
+}
+
 class Mempool extends Worker {
   constructor (config) {
     super(config)
     this.statusFile = path.join(__dirname, '../status/mempool.json')
     this.current_height = null
+    this.mempoolCache = new MempoolCache()
   }
 
   getCurrrentFeeThreshold (args, cb) {
@@ -70,8 +95,14 @@ class Mempool extends Worker {
       return
     }
 
+    if (this._mempool_running) {
+      this.alertSlack('warning', 'Mempool parser taking too long.')
+      return
+    }
+    this._mempool_running = true
+
     async.waterfall([
-      async () => this.btc.getMempool({ verbose: true }),
+      async () => this.btc.getOptimisedMempool({ verbose: true }),
       (mempool, next) => {
         this._getCurrentHeight((err, height) => {
           if (err) return next(err)
@@ -82,6 +113,8 @@ class Mempool extends Worker {
         const mempoolTx = []
 
         for (const txid in mempool) {
+          if (this.mempoolCache.exists(txid)) continue
+          this.mempoolCache.add(txid)
           const tx = mempool[txid]
           const satVbyte = new BN(toSatoshi(tx.fee)).dividedToIntegerBy(tx.vsize)
           if (!satVbyte.isInteger()) {
@@ -102,35 +135,30 @@ class Mempool extends Worker {
           tx._txid = txid
           tx.zero_conf = !zeroConfTx
           if (!tx.zero_conf) continue
-          const details = await this.btc.getRawTransaction({ id: tx._txid })
-          mempoolTx.push({ mempool: tx, details })
+          mempoolTx.push(tx)
         }
         return mempoolTx
       },
       async (txs) => {
-        return txs.map(({ details, mempool }) => {
-          return _.get(details, 'vout', []).map((vout) => {
-            const toAddr = getDestinationAddr(vout)
-            if (!toAddr) return null
-            return {
-              height: mempool.height,
-              hash: details.txid,
-              to: toAddr,
-              amount_base: toSatoshi(vout.value),
-              fee_base: toSatoshi(mempool.fee || 0),
-              zero_conf: mempool.zero_conf
-            }
+        const res = await async.mapSeries(txs, async ({ _txid, fee }) => {
+          const tx = await this.btc.parseTransaction({ height: 'SKIP', id: _txid })
+          return (await this.btc.processSender(tx)).map((tx) => {
+            tx.zero_conf = true
+            tx.fee_base = toSatoshi(fee)
+            return tx
           })
-        }).flat().filter(Boolean)
+        })
+        return res.flat().filter(Boolean)
       }
     ], (err, data) => {
       if (err) {
-        debug('Error Parsing Mempool', err)
+        console.log('Error Parsing Mempool', err)
         this.alertSlack('error', 'Unable to fetch mempool tx')
         return
       }
-      debug(`Mempool transaction count: ${data.length}`)
+      console.log(`Filtered Mempool transaction count: ${data.length}`)
       this.publishNewTx(data)
+      this._mempool_running = false
     })
   }
 
