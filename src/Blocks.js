@@ -1,7 +1,5 @@
 'use strict'
 const async = require('async')
-const { toSatoshi } = require('./sats-convert')
-const { getDestinationAddr, isCoinbase } = require('./parse-tx')
 const BitcoinWorker = require('./BitcoinWorker')
 const { StatusFile } = require('blocktank-worker')
 const blockConfig = require('../config/blocks.worker.config.json')
@@ -64,76 +62,16 @@ class BlockProcessor extends BitcoinWorker {
     })
   }
 
-  async getBlockHeight ({ id }) {
-    const block = await this.btc.getBlock(id)
-    return block.height ? block.height : null
-  }
-
-  async parseTransaction ({ height, id }) {
-    const tx = await this.btc.getRawTransaction({ id })
-    if (!tx) return null
-
-    if (!height) {
-      if (!tx.blockhash) {
-        return []
-      }
-      height = await this.getBlockHeight({ id: tx.blockhash })
-      if (!height) {
-        return []
-      }
-    }
-    return tx.vout
-      .map((vout) => {
-        const toAddr = getDestinationAddr(vout)
-        if (!toAddr) return null
-        return [tx, {
-          height,
-          hash: id,
-          to: toAddr,
-          amount_base: toSatoshi(vout.value),
-          fee_base: toSatoshi(vout.fee || 0)
-        }]
-      })
-  }
-
-  async processSender (tx) {
-    return new Promise((resolve, reject) => {
-      async.mapSeries(tx, async (data, next) => {
-        if (!data) return null
-        const [rawTx, parsedTx] = data
-        if (!rawTx.vin) {
-          parsedTx.from = null
-          return parsedTx
-        }
-        const from = []
-        for (const vin of rawTx.vin) {
-          if (vin.coinbase) continue
-          const tx = await this.parseTransaction({ height: null, id: vin.txid })
-          if (!tx) continue
-          tx.forEach((d) => {
-            if (!d) return
-            from.push(d[1].to)
-          })
-        }
-        parsedTx.from = from
-        return parsedTx
-      }, (err, data) => {
-        if (err) return reject(err)
-        resolve(data)
-      })
-    })
-  }
-
   async getHeightTransactions ({ height }, cb) {
     console.log('Getting transactions for block: ', height)
     const blockTx = await this.getBlockData({ height })
     return new Promise((resolve, reject) => {
       async.mapSeries(blockTx.tx, async (id) => {
-        const tx = await this.parseTransaction({ height, id })
-        return this.processSender(tx)
+        const tx = await this.btc.parseTransaction({ height, id })
+        return this.btc.processSender(tx)
       }, (err, data) => {
         if (err) return cb(err)
-        console.log('Done block', height)
+        console.log('Done processing block: ', height)
         const tx = data.flat().filter(Boolean)
         cb(null, tx)
       })
