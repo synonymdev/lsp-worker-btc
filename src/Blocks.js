@@ -66,13 +66,14 @@ class BlockProcessor extends BitcoinWorker {
     console.log('Getting transactions for block: ', height)
     const blockTx = await this.getBlockData({ height })
     return new Promise((resolve, reject) => {
-      async.mapSeries(blockTx.tx, async (id) => {
+      async.mapLimit(blockTx.tx, 2, async (id) => {
         const tx = await this.btc.parseTransaction({ height, id })
         return this.btc.processSender(tx)
       }, (err, data) => {
         if (err) return cb(err)
         console.log('Done processing block: ', height)
         const tx = data.flat().filter(Boolean)
+        this.btc.rawTxCache.clear()
         cb(null, tx)
       })
     })
