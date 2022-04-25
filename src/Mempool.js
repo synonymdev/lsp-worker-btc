@@ -73,7 +73,6 @@ class Mempool extends Worker {
 
     if (this._mempool_running) {
       console.log('warning', 'Mempool parser taking too long.')
-      // this.alertSlack('warning', 'Mempool parser taking too long.')
       return
     }
     this._mempool_running = true
