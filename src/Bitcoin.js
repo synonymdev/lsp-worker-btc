@@ -3,6 +3,7 @@ const axios = require('axios')
 const { get } = require('lodash')
 const BitcoinDB = require('./BitcoinDb')
 const { toSatoshi } = require('./sats-convert')
+const Cache = require('./Cache')
 const { getDestinationAddr } = require('./parse-tx')
 const async = require('async')
 
@@ -19,6 +20,7 @@ module.exports = class Bitcoin {
   constructor (config = {}) {
     this.config = config.bitcoin_node
     this.db = new BitcoinDB(config)
+    this.rawTxCache = new Cache()
   }
 
   async _callApi (method, params, cb) {
@@ -70,7 +72,7 @@ module.exports = class Bitcoin {
     const mempool = await this.getMempool(options)
 
     const data = {}
-    const MIN_TIME = 300
+    const MIN_TIME = 600
     const now = Math.floor(Date.now() / 1000)
     for (const txid in mempool) {
       const tx = mempool[txid]
@@ -132,26 +134,14 @@ module.exports = class Bitcoin {
         args.amount,
         args.tag,
         '', // comment_to
-        true, // subtractfeefromamount
-        true, // replaceable
-        1 //  target bloc
+        false, // subtractfeefromamount
+        args.replacable // replaceable
       ])
     } catch (err) {
       console.log(err)
       return cb(err)
     }
-
-    this.db.saveTx({
-      to: args.address,
-      amount: args.amount,
-      tag: args.tag,
-      txid: send
-    }, (err, data) => {
-      if (err) {
-        return cb(new Error(`Failed to save tx: ${send}`))
-      }
-      cb(null, { txid: send })
-    })
+    cb(null, { txid: send })
   }
 
   async getWalletBalance (args, cb) {
@@ -171,9 +161,12 @@ module.exports = class Bitcoin {
   }
 
   async parseTransaction ({ height, id }) {
-    const tx = await this.getRawTransaction({ id })
+    let tx = this.rawTxCache.get(id)
+    if (!tx) {
+      tx = await this.getRawTransaction({ id })
+    }
     if (!tx) return null
-
+    this.rawTxCache.add(id,tx)
     if (!height || height !== 'SKIP') {
       if (!tx.blockhash) {
         return []
@@ -228,7 +221,7 @@ module.exports = class Bitcoin {
   }
 
   async mineRegtestCoin (args, cb) {
-    this.getNewAddress({ tag: 'regtest_min' }, async (err, {address}) => {
+    this.getNewAddress({ tag: 'regtest_min' }, async (err, { address }) => {
       if (err) return cb(err)
       const block = await this._callApi('generatetoaddress', {
         address,

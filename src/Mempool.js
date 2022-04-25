@@ -7,6 +7,7 @@ const BN = require('bignumber.js')
 const { default: axios } = require('axios')
 const Worker = require('./BitcoinWorker')
 const { toSatoshi } = require('./sats-convert')
+const Cache = require('./Cache')
 const mempoolConfig = require('../config/mempool.worker.config.json')
 
 async function mempoolProvider () {
@@ -19,37 +20,12 @@ async function mempoolProvider () {
   }
 }
 
-class MempoolCache {
-  constructor () {
-    this.store = new Map()
-
-    const CACHE_CLEAR = 300000 // five mins
-
-    this.timer = setInterval(() => {
-      this.store.forEach((v, k) => {
-        const diff = Date.now() - v
-        if (diff > CACHE_CLEAR) {
-          this.store.delete(k)
-        }
-      })
-    })
-  }
-
-  add (txid) {
-    this.store.set(txid, Date.now())
-  }
-
-  exists (txid) {
-    return this.store.has(txid)
-  }
-}
-
 class Mempool extends Worker {
   constructor (config) {
     super(config)
     this.statusFile = path.join(__dirname, '../status/mempool.json')
     this.current_height = null
-    this.mempoolCache = new MempoolCache()
+    this.mempoolCache = new Cache()
   }
 
   getCurrrentFeeThreshold (args, cb) {
@@ -96,7 +72,7 @@ class Mempool extends Worker {
     }
 
     if (this._mempool_running) {
-      this.alertSlack('warning', 'Mempool parser taking too long.')
+      console.log('warning', 'Mempool parser taking too long.')
       return
     }
     this._mempool_running = true
@@ -137,12 +113,14 @@ class Mempool extends Worker {
           if (!tx.zero_conf) continue
           mempoolTx.push(tx)
         }
+        console.log(`Filtered tx: ${mempoolTx.length}`, mempoolTx)
         return mempoolTx
       },
       async (txs) => {
-        const res = await async.mapSeries(txs, async ({ _txid, fee }) => {
+        const res = await async.mapLimit(txs, 2, async ({ _txid, fee }) => {
           const tx = await this.btc.parseTransaction({ height: 'SKIP', id: _txid })
           return (await this.btc.processSender(tx)).map((tx) => {
+            if (!tx) return null
             tx.zero_conf = true
             tx.fee_base = toSatoshi(fee)
             return tx
@@ -151,6 +129,7 @@ class Mempool extends Worker {
         return res.flat().filter(Boolean)
       }
     ], (err, data) => {
+      this._mempool_running = false
       if (err) {
         console.log('Error Parsing Mempool', err)
         this.alertSlack('error', 'Unable to fetch mempool tx')
@@ -158,7 +137,6 @@ class Mempool extends Worker {
       }
       console.log(`Filtered Mempool transaction count: ${data.length}`)
       this.publishNewTx(data)
-      this._mempool_running = false
     })
   }
 
