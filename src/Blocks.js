@@ -9,7 +9,7 @@ class BlockProcessor extends BitcoinWorker {
     super(config)
     this.block_time = config.block_time || 5000
     this.min_confirmation = config.min_confirmation
-
+    this._block_processor = false
     this.statusFile = new StatusFile({
       tag: 'bitcoin',
       postfix: 'blocks'
@@ -54,7 +54,7 @@ class BlockProcessor extends BitcoinWorker {
   updateHeight () {
     this.btc.getHeight({}, (err, height) => {
       if (err) throw err
-      if (height > this.current_height) {
+      if (height > this.current_height && !this._block_processor) {
         this.current_height = this.current_height + 1
         this._updateStatusFile(this.current_height)
         this.publishNewBlock(this.current_height)
@@ -62,16 +62,30 @@ class BlockProcessor extends BitcoinWorker {
     })
   }
 
-  async getHeightTransactions ({ height }, cb) {
-    console.log('Getting transactions for block: ', height)
+  async getHeightTransactions ({ height, address }, cb) {
+    this._block_processor = true
+    console.log('Getting transactions for block: ', height, 'Orders: ', address.length)
+    console.time('getHeightTransactions')
     const blockTx = await this.getBlockData({ height })
     return new Promise((resolve, reject) => {
+      console.log(`Processing Block: ${height} : ${blockTx.tx.length} transactions`)
       async.mapLimit(blockTx.tx, 2, async (id) => {
-        const tx = await this.btc.parseTransaction({ height, id })
-        return this.btc.processSender(tx)
+        if (address.length === 0) return true
+        const tx = (await this.btc.parseTransaction({ height, id }))
+          .filter((tx) => {
+            const index = address.indexOf(tx[1].to)
+            if (index > -1) {
+              address.splice(index, 1)
+              return true
+            }
+            return false
+          })
+        if (tx.length === 0) return null
+        return this.btc.processSender(tx, false)
       }, (err, data) => {
+        console.timeEnd('getHeightTransactions')
+        this._block_processor = false
         if (err) return cb(err)
-        console.log('Done processing block: ', height)
         const tx = data.flat().filter(Boolean)
         this.btc.rawTxCache.clear()
         cb(null, tx)

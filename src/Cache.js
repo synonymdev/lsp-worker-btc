@@ -29,6 +29,10 @@ class Cache {
   clear () {
     this.store.clear()
   }
+
+  get (id) {
+    return this.store.get(id)
+  }
 }
 
 module.exports = Cache

@@ -2,7 +2,6 @@
 const path = require('path')
 const _ = require('lodash')
 const async = require('async')
-const debug = require('debug')('LH:Mempool')
 const BN = require('bignumber.js')
 const { default: axios } = require('axios')
 const Worker = require('./BitcoinWorker')
@@ -20,6 +19,7 @@ async function mempoolProvider () {
   }
 }
 
+// TODO: Use Zeromq stream instead of polling getrawmempool
 class Mempool extends Worker {
   constructor (config) {
     super(config)
@@ -67,7 +67,7 @@ class Mempool extends Worker {
 
   checkMempool () {
     if (!this.min_fee) {
-      debug('Minimum fee is not set, aborting')
+      console.log('Minimum fee is not set, aborting')
       return
     }
 
@@ -110,20 +110,19 @@ class Mempool extends Worker {
           ].includes(false)
           tx._txid = txid
           tx.zero_conf = !zeroConfTx
-          if (!tx.zero_conf) continue
           mempoolTx.push(tx)
         }
-        console.log(`Filtered tx: ${mempoolTx.length}`, mempoolTx)
+        console.log(`Filtered tx: ${mempoolTx.length}`)
         return mempoolTx
       },
       async (txs) => {
-        const res = await async.mapLimit(txs, 2, async ({ _txid, fee }) => {
+        const res = await async.mapLimit(txs, 2, async ({ _txid, fee, zero_conf: zeroConf }) => {
           const tx = await this.btc.parseTransaction({ height: 'SKIP', id: _txid })
-          return (await this.btc.processSender(tx)).map((tx) => {
+          return (await this.btc.processSender(tx, true)).map((parsedTx) => {
             if (!tx) return null
-            tx.zero_conf = true
-            tx.fee_base = toSatoshi(fee)
-            return tx
+            parsedTx.zero_conf = zeroConf
+            parsedTx.fee_base = toSatoshi(fee)
+            return parsedTx
           })
         })
         return res.flat().filter(Boolean)
