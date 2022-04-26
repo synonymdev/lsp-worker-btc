@@ -20,7 +20,7 @@ module.exports = class Bitcoin {
   constructor (config = {}) {
     this.config = config.bitcoin_node
     this.db = new BitcoinDB(config)
-    this.rawTxCache = new Cache()
+    this.rawTxCache = new Cache({ ttl: 5000 })
   }
 
   async _callApi (method, params, cb) {
@@ -166,7 +166,9 @@ module.exports = class Bitcoin {
       tx = await this.getRawTransaction({ id })
     }
     if (!tx) return null
-    this.rawTxCache.add(id,tx)
+    if (!tx.vout) return null
+    this.rawTxCache.add(id, tx)
+
     if (!height || height !== 'SKIP') {
       if (!tx.blockhash) {
         return []
@@ -189,7 +191,7 @@ module.exports = class Bitcoin {
           to: toAddr,
           amount_base: toSatoshi(vout.value)
         }]
-      })
+      }).filter(Boolean)
   }
 
   async processSender (tx, mempoolTx) {
@@ -202,15 +204,15 @@ module.exports = class Bitcoin {
           return parsedTx
         }
         const from = []
-        for (const vin of rawTx.vin) {
-          if (vin.coinbase) continue
+        await async.forEachLimit(rawTx.vin, 2, async (vin) => {
+          if (vin.coinbase) return
           const tx = await this.parseTransaction({ height: mempoolTx ? 'SKIP' : null, id: vin.txid })
-          if (!tx) continue
+          if (!tx) return
           tx.forEach((d) => {
             if (!d || from.includes(d[1].to)) return
             from.push(d[1].to)
           })
-        }
+        })
         parsedTx.from = from
         return parsedTx
       }, (err, data) => {
@@ -221,7 +223,7 @@ module.exports = class Bitcoin {
   }
 
   async mineRegtestCoin (args, cb) {
-    this.getNewAddress({ tag: 'regtest_min' }, async (err, { address }) => {
+    this.getNewAddress({ tag: 'regtest_mine' }, async (err, { address }) => {
       if (err) return cb(err)
       const block = await this._callApi('generatetoaddress', {
         address,
