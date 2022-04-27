@@ -65,18 +65,25 @@ class Mempool extends Worker {
     })
   }
 
-  checkMempool () {
+  getMempoolTx (filter, cb) {
     if (!this.min_fee) {
       console.log('Minimum fee is not set, aborting')
-      return
+      return cb(null, [])
     }
 
     if (this._mempool_running) {
       console.log('warning', 'Mempool parser taking too long.')
-      return
+      return cb(null, [])
     }
-    this._mempool_running = true
 
+    const filterAddr = filter.address
+
+    if (filterAddr.length === 0) {
+      return cb(null, [])
+    }
+
+    console.log('Filtering mempool for ', filterAddr.length)
+    this._mempool_running = true
     async.waterfall([
       async () => this.btc.getOptimisedMempool({ verbose: true }),
       (mempool, next) => {
@@ -94,7 +101,7 @@ class Mempool extends Worker {
           const tx = mempool[txid]
           const satVbyte = new BN(toSatoshi(tx.fee)).dividedToIntegerBy(tx.vsize)
           if (!satVbyte.isInteger()) {
-            return next(new Error('Failed to calculate SatVbyte'))
+            throw new Error('Failed to calculate SatVbyte')
           }
           const zeroConfTx = [
             // We do not accept transactions older than current block
@@ -116,16 +123,24 @@ class Mempool extends Worker {
         return mempoolTx
       },
       async (txs) => {
-        const res = await async.mapLimit(txs, 2, async ({ _txid, fee, zero_conf: zeroConf }) => {
-          const tx = await this.btc.parseTransaction({ height: 'SKIP', id: _txid })
-          return (await this.btc.processSender(tx, true)).map((parsedTx) => {
-            if (!tx) return null
-            parsedTx.zero_conf = zeroConf
-            parsedTx.fee_base = toSatoshi(fee)
-            return parsedTx
-          })
+        const data = await async.mapLimit(txs, 2, async ({ _txid: id, zero_conf: zeroConf, fee }) => {
+          if (filterAddr.length === 0) return null
+          const tx = (await this.btc.parseTransaction({ height: 'SKIP', id }))
+            .map((tx) => {
+              const index = filterAddr.indexOf(tx[1].to)
+              if (index > -1) {
+                filterAddr.splice(index, 1)
+                tx[1].zero_conf = zeroConf
+                tx[1].fee_base = toSatoshi(fee)
+                return tx
+              }
+              return null
+            }).filter(Boolean)
+          if (tx.length === 0) return null
+          return this.btc.processSender(tx, true)
         })
-        return res.flat().filter(Boolean)
+        if (!data || data.length === 0) return []
+        return data.flat().filter(Boolean)
       }
     ], (err, data) => {
       this._mempool_running = false
@@ -134,8 +149,8 @@ class Mempool extends Worker {
         this.alertSlack('error', 'Unable to fetch mempool tx')
         return
       }
-      console.log(`Filtered Mempool transaction count: ${data.length}`)
-      this.publishNewTx(data)
+      console.log(`Filtered Mempool tx count: ${data.length}`)
+      cb(null, data)
     })
   }
 
@@ -167,9 +182,6 @@ class Mempool extends Worker {
     this.fee_timer = setInterval(() => {
       this.updateMinFee()
     }, mempoolConfig.quote_expiry)
-    this.mempooltimer = setInterval(() => {
-      this.checkMempool()
-    }, mempoolConfig.mempool_timer)
   }
 }
 
