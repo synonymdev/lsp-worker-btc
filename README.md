@@ -51,3 +51,16 @@ or use [pm2](https://pm2.keymetrics.io/docs/usage/process-management/) to run th
 pm2 start ecosystem.config.js
 ```
 
+## Workers
+
+The following workers are started here...
+
+* start.bitcoin.js: svc:btc - provides access to calling the connected Bitcoin node
+* start.blocks.js: svc:btc:blocks - watches for new blocks and calls workers when that happens
+* start.mempool.js: svc:btc:mempool - watches for new transactions in the mempool and calls workers when that happens
+
+By default, the following workers are called (though this can be changed in the config files)...
+
+* start.blocks.js: svc:btc_zero_conf_orders - called on each new block (see config)
+* start.blocks.js: svc:btc_address_watch - called on each new block (see config)
+* start.mempool.js: svc:btc_zero_conf_orders - called on each new transaction detected (see config)
