@@ -146,7 +146,7 @@ class Mempool extends Worker {
       this._mempool_running = false
       if (err) {
         console.log('Error Parsing Mempool', err)
-        this.alertSlack('error', 'Unable to fetch mempool tx')
+        // this.alertSlack('error', 'Unable to fetch mempool tx')
         return
       }
       console.log(`Filtered Mempool tx count: ${data.length}`)
@@ -160,7 +160,7 @@ class Mempool extends Worker {
     try {
       fee = await mempoolProvider()
     } catch (err) {
-      this.alertSlack('error', 'Mempool fee provider down.')
+      // this.alertSlack('error', 'Mempool fee provider down.')
       fee = null
     }
 
