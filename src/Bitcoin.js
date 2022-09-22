@@ -54,6 +54,15 @@ module.exports = class Bitcoin {
     return data
   }
 
+  async getBlockchainInfo (args, cb) {
+    try {
+      const info = await this._callApi('getblockchaininfo', {})
+      cb(null, info)
+    } catch (err) {
+      return cb(err)
+    }
+  }
+
   async getHeight (args, cb) {
     try {
       const info = await this._callApi('getblockchaininfo', {})
