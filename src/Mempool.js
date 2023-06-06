@@ -9,6 +9,7 @@ const { toSatoshi } = require('./sats-convert')
 const Cache = require('./Cache')
 const mempoolConfig = require('../config/mempool.worker.config.json')
 
+
 async function mempoolProvider () {
   try {
     const res = await axios.get('https://mempool.space/api/v1/fees/recommended')
@@ -26,6 +27,8 @@ class Mempool extends Worker {
     this.statusFile = path.join(__dirname, '../status/mempool.json')
     this.current_height = null
     this.mempoolCache = new Cache()
+
+    if(mempoolConfig.min_fee_range > 10) throw new Error("min_fee_range is too high")
   }
 
   getCurrrentFeeThreshold (args, cb) {
@@ -94,12 +97,13 @@ class Mempool extends Worker {
       },
       async ({ mempool, height }, next) => {
         const mempoolTx = []
-
         for (const txid in mempool) {
           if (this.mempoolCache.exists(txid)) continue
           this.mempoolCache.add(txid)
           const tx = mempool[txid]
+
           const satVbyte = new BN(toSatoshi(tx.fee)).dividedToIntegerBy(tx.vsize)
+
           if (!satVbyte.isInteger()) {
             throw new Error('Failed to calculate SatVbyte')
           }
@@ -112,31 +116,54 @@ class Mempool extends Worker {
             tx.spentby.length === 0,
             // Do not accept RBF (Replace by fee)
             tx['bip125-replaceable'] === false,
-            // Minimum Fee must be spent
-            satVbyte.gte(this.min_fee)
-          ].includes(false)
+          ]
+
           tx._txid = txid
-          tx.zero_conf = !zeroConfTx
+          tx.zero_conf = !zeroConfTx.includes(false);
+          
+          tx.fee_sat_vbyte = satVbyte
           mempoolTx.push(tx)
         }
         console.log(`Filtered tx: ${mempoolTx.length}`)
         return mempoolTx
       },
       async (txs) => {
-        const data = await async.mapLimit(txs, 2, async ({ _txid: id, zero_conf: zeroConf, fee }) => {
-          if (filterAddr.length === 0) return null
-          const tx = (await this.btc.parseTransaction({ height: 'SKIP', id }))
-            .map((tx) => {
-              const index = filterAddr.indexOf(tx[1].to)
-              if (index > -1) {
-                filterAddr.splice(index, 1)
-                tx[1].zero_conf = zeroConf
-                tx[1].fee_base = toSatoshi(fee)
-                return tx
-              }
-              return null
-            }).filter(Boolean)
-          if (tx.length === 0) return null
+        const data = await async.mapLimit(txs, 2, async (args) => {
+          
+          const id = args._txid
+          const fee = args.fee
+          const satVbyte = args.fee_sat_vbyte
+          const zeroConf = args.zero_conf
+          if (filterAddr.length === 0) return []
+          
+          let tx
+          try {
+            tx = (await this.btc.parseTransaction({ height: 'SKIP', id }))
+          } catch(err){
+            return []
+          }
+
+          if(!tx) return []
+          
+          tx = tx.map((tx) => {
+            const orderIndex = filterAddr.findIndex(([addr])=>{ 
+              return tx[1].to === addr
+            })
+            if(orderIndex === -1) return null 
+            const [addr, minFee] = filterAddr[orderIndex]
+            
+            // Check to see that the minimum fee has been spent
+            // We allow a small amount of difference, to increase reliability
+            if(satVbyte.gte(minFee - mempoolConfig.min_fee_range)) {
+              filterAddr.splice(orderIndex,1)
+              tx[1].fee_base = toSatoshi(fee)
+              tx[1].zero_conf = true
+            }
+            
+            return tx
+          }).filter(Boolean)
+
+          if (tx.length === 0) return []
           return this.btc.processSender(tx, true)
         })
         if (!data || data.length === 0) return []
