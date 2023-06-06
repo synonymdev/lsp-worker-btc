@@ -51,7 +51,20 @@ class BlockProcessor extends BitcoinWorker {
     cb(null, this.current_height || null)
   }
 
+  setHeightToLatestBlock (args, cb) {
+    this.pause_timer = true
+    this.btc.getHeight({}, (err, height) => {
+      if (err) throw err
+      this.current_height = height
+      this._updateStatusFile(this.current_height)
+      //this.publishNewBlock(this.current_height)
+      this.pause_timer = false
+      cb()
+    })
+  }
+
   updateHeight () {
+    if(this.pause_timer) return 
     this.btc.getHeight({}, (err, height) => {
       if (err) throw err
       if (height > this.current_height && !this._block_processor) {

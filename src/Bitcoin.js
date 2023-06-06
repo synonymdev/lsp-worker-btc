@@ -92,6 +92,19 @@ module.exports = class Bitcoin {
     return data
   }
 
+  async createWallet (options, cb) {
+    let wallet
+    try {
+      wallet = await this._callApi('createwallet', {
+        wallet_name: options.wallet_name,
+        load_on_startup: options.load_on_startup
+      })
+    } catch(err){
+      cb(err)
+    }
+    cb(null, wallet)
+  }
+
   async estimateSmartFee (options) {
     return this._callApi('estimatesmartfee', options)
   }
@@ -232,6 +245,15 @@ module.exports = class Bitcoin {
   }
 
   async mineRegtestCoin (args, cb) {
+    
+    if(args.address) {
+      const block = await this._callApi('generatetoaddress', {
+        address: args.address,
+        nblocks: args.blocks
+      })
+      return cb(null, block)
+    }
+    
     this.getNewAddress({ tag: 'regtest_mine' }, async (err, { address }) => {
       if (err) return cb(err)
       const block = await this._callApi('generatetoaddress', {

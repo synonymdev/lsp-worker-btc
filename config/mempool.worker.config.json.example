@@ -9,8 +9,9 @@
   "max_amount": 1000000000000,
   "max_orders": 10,
   "max_total_amount": 500000000,
-  "quote_expiry": 1000,
-  "mempool_timer": 5000
+  "quote_expiry": 10000,
+  "mempool_timer": 5000,
+  "min_fee_range": 5
 }
 
 

@@ -31,7 +31,9 @@ class Cache {
   }
 
   get (id) {
-    return this.store.get(id)
+    const d =  this.store.get(id)
+    if(d) return d[1]
+    return null
   }
 }
 
