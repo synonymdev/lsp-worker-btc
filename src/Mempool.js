@@ -154,10 +154,12 @@ class Mempool extends Worker {
             
             // Check to see that the minimum fee has been spent
             // We allow a small amount of difference, to increase reliability
-            if(satVbyte.gte(minFee - mempoolConfig.min_fee_range)) {
+            if(satVbyte.gte(minFee - mempoolConfig.min_fee_range) && zeroConf) {
               filterAddr.splice(orderIndex,1)
               tx[1].fee_base = toSatoshi(fee)
               tx[1].zero_conf = true
+            } else {
+              tx[1].zero_conf = false
             }
             
             return tx
