@@ -1,4 +1,4 @@
-# Blocktank Bitcoin Worker
+# LSP Bitcoin Worker
 Microservice worker to interact with Bitcoin node
 
 ## Features
